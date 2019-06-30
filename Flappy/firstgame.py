@@ -13,111 +13,164 @@ for file in glob.glob(r'Images\*.png'):
     newheight = int( ( float(img.size[1]) * float(wpercent) ) )
     img = img.resize( (newwidth, newheight), Image.ANTIALIAS )
     img.save(file)     
-
 """
 
 pg.init()
 
+pg.mixer.Channel(0).play(pg.mixer.Sound('Sounds\game.wav'), -1)
+pg.mixer.Channel(2).set_volume(0.5)
+
 scr_height = 504
-scr_width = 500
+scr_width = 900
+
+bird_width = 60
+bird_height = 51
 
 win = pg.display.set_mode((scr_width, scr_height))
 pg.display.set_caption("Flappy Bird")
-
 bg = pg.image.load(r'Images\BG\bg.png')
 
-flaprate = 4
-
-frames = [None] * (flaprate * 4)
-
-i = 0
-for file in glob.glob(r'Images\Bird\*.png'):
-    for j in range(flaprate):
-        frames[i] = pg.image.load(file)
-        i += 1
-            
+roll_cur = 0
+roll_next = scr_width
 
 clock = pg.time.Clock()
 
-x = 50
-y = 50
-vel = 5
-time = 0
-rollbg = scr_width
-rollbg2 = 0 
-run = True
-isjump = False
+class bird(object):
+    def __init__(self, x, y, width, height):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        
+        self.change = 5
+        self.acc = 0.2
+        self.vel = 0
+        self.time = 0
+        
+        self.isjump = False
+        self.jumpsize = 12
+        self.xjump = -self.jumpsize
+        self.yjump = 0
+        self.ystore = 0
+        
+        self.flaprate = 4
+        self.frames = [None] * (self.flaprate * 4) 
+    
+    def createFrames(self):
+        i = 0
+        
+        for file in glob.glob(r'Images\Bird\*.png'):
+            for j in range(self.flaprate):
+                self.frames[i] = pg.image.load(file)
+                i += 1
+    
+    def draw(self, win):
+        if self.isjump == True:
+            cur_image = pg.transform.rotate(self.frames[self.time], (-self.yjump)/4)
+       
+        else:
+            if self.y == scr_height - bird_height:
+                cur_image = self.frames[self.time]
+                
+            else:    
+                cur_image = pg.transform.rotate(self.frames[self.time], -min(self.vel * 10, 90)) 
+    
+        win.blit(cur_image , (self.x, self.y))
+        self.time = (self.time + 1) % (self.flaprate * 4)
+        
+        if self.isjump == False: 
+            if self.y + self.vel <= scr_height - bird_height:
+                self.y += self.vel
+                self.vel += self.acc
+            
+            else:
+                self.y = scr_height - bird_height
+                self.vel = 0
 
-pg.mixer.music.load(r'Sounds\jump.mp3')
-yj = 0
-xj = -16
-ystore = 0
+run = True
+
+blue = bird(50, 50, 60, 51)
+blue.createFrames()
 
 def winUpdate():
-    global time, rollbg, rollbg2
+    global roll_cur, roll_next
     
-    win.blit(bg, (rollbg, 0))
-    win.blit(bg, (rollbg2, 0))
+    win.blit(bg, (roll_cur, 0))
+    win.blit(bg, (roll_next, 0))
     
-    if isjump == True:
-        cur_image = pg.transform.rotate(frames[time], (-yj)/4)
-       
-    else:
-        cur_image = frames[time] 
+    roll_cur = (roll_cur - 1)
+    roll_next = (roll_next - 1)
     
-    win.blit(cur_image , (x, y))
+    if roll_cur == -scr_width:
+        roll_cur = scr_width
+        
+    if roll_next == -scr_width:
+        roll_next = scr_width
+    
+    blue.draw(win)
+    
     pg.display.update()
     
-    time = (time + 1) % (flaprate * 4)
-    rollbg = (rollbg - 1)
-    rollbg2 = (rollbg2 - 1)
-    if rollbg2 == -scr_width:
-        rollbg2 = 0
-        
-    if rollbg == 0:
-        rollbg = scr_width
-    
+
 while run:
+   
     clock.tick(60)
     
     for event in pg.event.get():
         if event.type == pg.QUIT:
             run = False
-            #pg.mixer.music.stop()
-    
+           
     keys = pg.key.get_pressed()
     
     if keys[pg.K_LEFT]:
-        x = (x - vel) % scr_width
+        blue.x = (blue.x - blue.change) % scr_width
       
     if keys[pg.K_RIGHT]:
-        x = (x + vel) % scr_width
+        blue.x = (blue.x + blue.change) % scr_width
     
-    if isjump == False:
+    if blue.isjump == False:
         if keys[pg.K_UP]:
-            y = (y - vel) % scr_height 
+            blue.vel = 0
             
-        if keys[pg.K_DOWN]:    
-            y = (y + vel) % scr_height
+            if blue.y > 0: 
+                blue.y -= blue.change
+                
+            else:
+                blue.y = 0
+                
+        if keys[pg.K_DOWN]:
+            blue.vel = 0
+            
+            if blue.y < scr_height - blue.height:
+                blue.y += blue.change
+            
+            else:
+                y = scr_height - bird_height    
             
         if keys[pg.K_SPACE]:
-            isjump = True
-            ystore = y
-           
-            pg.mixer.music.play(0)
-        
+            pg.mixer.Channel(2).play(pg.mixer.Sound('Sounds\jump.wav'))
+
+            blue.vel = 0
+            blue.isjump = True
+            blue.ystore = blue.y        
+            
     else:
-        if xj == 17:
-            isjump = False
-            yj = 0
-            xj = -16
+        if blue.xjump == blue.jumpsize + 1:
+            blue.isjump = False
+            blue.yjump = 0
+            blue.xjump = -blue.jumpsize
+            blue.vel = 0
             
-            pg.mixer.music.stop()
-            
-        yj = (xj * xj) - 256 
-        y = (ystore + yj) % scr_height
+        blue.yjump = (blue.xjump ** 2) - (blue.jumpsize ** 2)
         
-        xj += 1
+        if blue.y > 0:
+            blue.y = blue.ystore + blue.yjump
+        
+        else:
+            blue.y = 0
+        
+        blue.xjump += 1
     
     winUpdate()
-pg.quit()    
+    
+pg.quit()
