@@ -1,6 +1,8 @@
 import pygame as pg
 import glob
 import os
+import numpy as np
+from PIL import Image
 
 #For resizing frame images while maintaining the aspect ratio
 """
@@ -13,51 +15,64 @@ for file in glob.glob(r'Images\*.png'):
     wpercent = ( newwidth / float(img.size[0]) )
     newheight = int( ( float(img.size[1]) * float(wpercent) ) )
     img = img.resize( (newwidth, newheight), Image.ANTIALIAS )
-    img.save(file)     
-"""
+    img.save(file)  
+        
+# resizing the pipe image    
+pipe_img = Image.open(r'Images\Pipe\pipe.png')
+pipe_img = pipe_img.resize((100, 614))
+pipe_img.save(r'Images\Pipe\pipe.png') 
+"""    
 
-pg.init()
+pg.init()   #initiating the game
 
-pg.mixer.Channel(0).play(pg.mixer.Sound('Sounds\game.wav'), -1)
-pg.mixer.Channel(2).set_volume(0.5)
+pg.mixer.Channel(0).play(pg.mixer.Sound('Sounds\game.wav'), -1) #maingame sound
+pg.mixer.Channel(2).set_volume(0.5) #channel for flap sound
 
-scr_height = 504
-scr_width = 900
+scr_height = 550
+scr_width = 336
+g_height = 100
+
+pipe_length = 320        #upper limit of pipe
+pipe_down = scr_height - g_height     #lower limit of pipe
+pipe_up = pipe_down - pipe_length - 1 
+pipe_diff = 100
 
 bird_width = 60
 bird_height = 51
 
-win = pg.display.set_mode((scr_width, scr_height))
+win = pg.display.set_mode((scr_width, scr_height))  #Setting the display screen
 pg.display.set_caption("Flappy Bird")
 bg = pg.image.load(r'Images\BG\bg.png')
+ground = pg.image.load(r'Images\BG\ground.png')
 
-roll_cur = 0
-roll_next = scr_width
+roll_cur_bg = 0            #roll variables for rolling the background
+roll_next_bg = scr_width
+bg_vel = 0.4
 
-clock = pg.time.Clock()
+roll_cur_g = 0            #roll variables for rolling the ground
+roll_next_g = scr_width
+g_vel = 3  
 
-class bird(object):
+clock = pg.time.Clock() 
+
+class bird(object):                             #character class
     def __init__(self, x, y, width, height):
         self.x = x
         self.y = y
         self.width = width
         self.height = height
+        self.change = 6         #upward velocity when flapped
+        self.acc = 0.2          #normal downward acceleration 
+        self.vel = 0            #downward velocity that increases with downward acceleration
+        self.time = 0           #for frame change
+        self.cur_angle = 0      #angle of rotation of character image
+        self.isup = False       #true when character is flapped upwards
         
-        self.change = 5
-        self.acc = 0.2
-        self.vel = 0
-        self.time = 0
-        
-        self.isjump = False
-        self.jumpsize = 12
-        self.xjump = -self.jumpsize
-        self.yjump = 0
-        self.ystore = 0
-        
-        self.flaprate = 4
+        self.flaprate = 4       
         self.frames = [None] * (self.flaprate * 4) 
-    
-    def createFrames(self):
+        self.cur_image = pg.image.load(r'Images\Bird\frame1.png')   #current image of character to be blitted
+        
+    def createFrames(self): 
         i = 0
         
         for file in glob.glob(r'Images\Bird\*.png'):
@@ -66,140 +81,145 @@ class bird(object):
                 i += 1
     
     def draw(self, win):
-        if self.isjump == True:
-            cur_image = pg.transform.rotate(self.frames[self.time], (-self.yjump)/4)
-       
-        else:
-            if self.y == scr_height - bird_height:
-                cur_image = self.frames[self.time]
-                
-            else:    
-                cur_image = pg.transform.rotate(self.frames[self.time], -min(self.vel * 10, 90)) 
-    
-        win.blit(cur_image , (self.x, self.y))
-        self.time = (self.time + 1) % (self.flaprate * 4)
-        
-        if self.isjump == False: 
-            if self.y + self.vel <= scr_height - bird_height:
-                self.y += self.vel
-                self.vel += self.acc
-            
-            else:
-                self.y = scr_height - bird_height
-                self.vel = 0
+        win.blit(self.cur_image , (self.x, self.y))
 
-class projectile(object):
-    def __init__(self, x, y, radius, color):
-        self.x = x
-        self.y = y
-        self.radius = radius
-        self.color = color
-        self.vel = 8
+pipe_img = pg.image.load(r'Images\Pipe\pipe.png').convert()
+pipe_width = 100
+
+class Pipe(object):                             #Pipe class 
+    def __init__(self):
+        self.x = scr_width 
+        self.y = np.random.randint(pipe_up, pipe_down + 1)
+        
+        while pipe_length < scr_height - g_height - self.y:         #To prevent drawing of pipes of length more than the available pipe_length
+            self.y = np.random.randint(pipe_up, pipe_down + 1)
+        
+        self.vel = g_vel
         
     def draw(self, win):
-        pg.draw.circle(win, self.color, (self.x, self.y), self.radius) 
+        win.blit(pipe_img, (self.x, self.y))
+        win.blit(pg.transform.rotate(pipe_img, 180), (self.x, self.y - 100 - pipe_length))
+       
+run = True              #main loop run variable
 
+blue = bird(100, 100, 60, 51)   #creating bluebird character
+blue.createFrames()             #creating bluebird frames
+
+green = Pipe()          
+
+def roll_bg():                              #Handles rolling of background
+    global roll_cur_bg, roll_next_bg
+    
+    roll_cur_bg = (roll_cur_bg - bg_vel)
+    roll_next_bg = (roll_next_bg - bg_vel)
+    
+    if roll_cur_bg <= -scr_width:
+        roll_cur_bg = scr_width
         
-run = True
+    if roll_next_bg <= -scr_width:
+        roll_next_bg = scr_width
 
-blue = bird(50, 50, 60, 51)
-blue.createFrames()
+def draw_bg(win):                           #Blits the rolling background
+    global roll_cur_bg, roll_next_bg
+     
+    win.blit(bg, (roll_cur_bg, 0))
+    win.blit(bg, (roll_next_bg, 0))
 
-bullets = []
-
+def roll_g():                               #Handles rolling of Ground
+    global roll_cur_g, roll_next_g
+    
+    roll_cur_g = (roll_cur_g - g_vel)
+    roll_next_g = (roll_next_g - g_vel)
+    
+    if roll_cur_g <= -scr_width:
+        roll_cur_g = scr_width
+        roll_next = 0
+        
+    if roll_next_g <= -scr_width:
+        roll_next_g = scr_width
+        roll_cur = 0
+    
+def draw_g(win):                            #Blits the rolling Ground
+    global roll_cur_g, roll_next_g
+    
+    win.blit(ground, (roll_cur_g, scr_height - g_height))
+    win.blit(ground, (roll_next_g, scr_height - g_height))
+    
 def winUpdate():
-    global roll_cur, roll_next
+    roll_bg()
+    draw_bg(win)
     
-    win.blit(bg, (roll_cur, 0))
-    win.blit(bg, (roll_next, 0))
+    green.draw(win)
     
-    roll_cur = (roll_cur - 1)
-    roll_next = (roll_next - 1)
-    
-    if roll_cur == -scr_width:
-        roll_cur = scr_width
-        
-    if roll_next == -scr_width:
-        roll_next = scr_width
+    roll_g()
+    draw_g(win)
     
     blue.draw(win)
-    
-    for bullet in bullets:
-        bullet.draw(win)
-    
+   
     pg.display.update()
     
-
 while run:
    
-    clock.tick(60)
+    clock.tick(60)      #setting fps
     
     for event in pg.event.get():
         if event.type == pg.QUIT:
             run = False
     
-    for bullet in bullets:
-        if bullet.x < scr_width and bullet.x > 0:
-            bullet.x += bullet.vel
-        else:
-            bullets.pop(bullets.index(bullet))
-        
-       
-    keys = pg.key.get_pressed()
+    keys = pg.key.get_pressed()         #storing current state of all keys
     
-    if keys[pg.K_x]:
-        if len(bullets) < 5 and blue.time % 4 == 0:
-            bullets.append(projectile(round(blue.x + blue.width // 2), round(blue.y + blue.height // 2), 6, (0,0,0)))
-    
-    if keys[pg.K_LEFT]:
-        blue.x = (blue.x - blue.change) % scr_width
-      
-    if keys[pg.K_RIGHT]:
-        blue.x = (blue.x + blue.change) % scr_width
-    
-    if blue.isjump == False:
-        if keys[pg.K_UP]:
-            blue.vel = 0
+    if keys[pg.K_UP]:                   #if up arrow is pressed
+        #pg.mixer.Channel(2).play(pg.mixer.Sound('Sounds\jump.wav'))
+        blue.vel = 0
+        blue.cur_angle = 30
+        blue.isup = True
             
-            if blue.y > 0: 
-                blue.y -= blue.change
+        if blue.y > 0:                  #to ensure character remains in the screen 
+            blue.y -= blue.change
                 
-            else:
-                blue.y = 0
-                
-        if keys[pg.K_DOWN]:
-            blue.vel = 0
-            
-            if blue.y < scr_height - blue.height:
-                blue.y += blue.change
-            
-            else:
-                y = scr_height - bird_height    
-            
-        if keys[pg.K_SPACE]:
-            pg.mixer.Channel(2).play(pg.mixer.Sound('Sounds\jump.wav'))
-
-            blue.vel = 0
-            blue.isjump = True
-            blue.ystore = blue.y        
-            
-    else:
-        if blue.xjump == blue.jumpsize + 1:
-            blue.isjump = False
-            blue.yjump = 0
-            blue.xjump = -blue.jumpsize
-            blue.vel = 0
-            
-        blue.yjump = (blue.xjump ** 2) - (blue.jumpsize ** 2)
-        
-        if blue.y > 0:
-            blue.y = blue.ystore + blue.yjump
-        
         else:
             blue.y = 0
+                
+      
+    if blue.isup == True:
+        blue.cur_image = pg.transform.rotate(blue.frames[blue.time], (blue.cur_angle))
+       
+    else:
+        if blue.y == scr_height - bird_height - ground_height:
+            blue.cur_image = blue.frames[blue.time]
+                
+        else:    
+            blue.cur_image = pg.transform.rotate(blue.frames[blue.time], max(blue.cur_angle - (blue.vel * 10), -90))             
         
-        blue.xjump += 1
-    
     winUpdate()
     
+    blue.isup = False;
+    
+    blue.time = (blue.time + 1) % (blue.flaprate * 4)   #for changing frames of character
+        
+   
+    if blue.y + blue.vel <= scr_height - bird_height - g_height:   #to ensure character doesnt go below the screen height
+        blue.y += blue.vel
+        blue.vel += blue.acc    #downward acceleration
+            
+    else:
+        #run = False
+        blue.y = scr_height - bird_height - g_height
+        blue.vel = 0    
+        
+        
+    if green.x < -(pipe_width):
+        green.x = scr_width
+        
+        green.y = np.random.randint(pipe_up, pipe_down + 1) 
+        
+        while green.y - pipe_diff > pipe_length:                              #To prevent drawing of pipes of length more than the available pipe_length
+            green.y = np.random.randint(pipe_up, pipe_down + 1)
+        
+    else:
+        green.x -= green.vel
+        
+
+
+  
 pg.quit()
